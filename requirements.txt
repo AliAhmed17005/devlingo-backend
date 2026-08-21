@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-dotenv
+openai
+firebase-admin
+sentence-transformers
+scikit-learn
+xgboost
+pandas
+matplotlib
+networkx
+pycodestyle
+python-multipart
+requests
