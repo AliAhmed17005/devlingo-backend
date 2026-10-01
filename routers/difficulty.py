@@ -159,8 +159,30 @@ async def get_next_problem(user_id: str, topic_id: str):
         problems_query = problems_ref.where("topicId", "==", topic_id)
         problems_docs = list(problems_query.stream())
 
-        if not problems_docs:
-            raise HTTPException(status_code=404, detail=f"No problems found in Firestore for topic: {topic_id}")
+        # Determine descriptive difficulty level based on ELO
+        if user_skill < 800:
+            diff_level = "easy"
+        elif user_skill < 1200:
+            diff_level = "medium"
+        elif user_skill < 1600:
+            diff_level = "hard"
+        else:
+            diff_level = "very_hard"
+
+        # 40% chance to generate a completely new question, or 100% if static pool is empty
+        import random
+        if not problems_docs or random.random() < 0.4:
+            try:
+                from routers.content_engine import generate_dynamic_question
+                new_prob = generate_dynamic_question(topic_id, diff_level)
+                return new_prob
+            except Exception as ge:
+                print(f"Dynamic content engine generation failed, using static pool fallback: {ge}")
+                if not problems_docs:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to generate dynamic question and no static problems are available."
+                    )
 
         # 3. Compute expected success probability for each problem
         flow_candidates = []

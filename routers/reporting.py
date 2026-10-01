@@ -24,7 +24,18 @@ if not firebase_admin._apps:
     except Exception as e:
         print(f"Firebase initialization warning: {e}")
 
-db = firestore.client()
+db_client = None
+def get_db():
+    global db_client
+    if db_client is None:
+        try:
+            db_client = firestore.client()
+        except Exception:
+            raise HTTPException(
+                status_code=503, 
+                detail="Firebase Admin SDK is not initialized. Please configure serviceAccount.json or GOOGLE_CREDS_JSON."
+            )
+    return db_client
 
 # Initialize OpenAI Client
 client = OpenAI(
@@ -39,6 +50,7 @@ import matplotlib.pyplot as plt
 # ── HELPER FUNCTION FOR REPORT GENERATION ──
 
 def _generate_weekly_report_data(user_id: str):
+    db = get_db()
     today = datetime.datetime.now(datetime.timezone.utc)
     seven_days_ago = today - datetime.timedelta(days=7)
     
@@ -222,6 +234,7 @@ def _generate_weekly_report_data(user_id: str):
 @router.post("/generate-weekly/{user_id}")
 async def generate_weekly(user_id: str):
     try:
+        db = get_db()
         report = _generate_weekly_report_data(user_id)
         if report.get("status") == "not enough data":
             return report
@@ -251,6 +264,7 @@ async def generate_weekly(user_id: str):
 @router.post("/send-email/{user_id}")
 async def send_email(user_id: str):
     try:
+        db = get_db()
         # 1. Generate weekly report data
         report = _generate_weekly_report_data(user_id)
         if report.get("status") == "not enough data":
@@ -381,6 +395,7 @@ async def send_email(user_id: str):
 @router.get("/history/{user_id}")
 async def get_history(user_id: str):
     try:
+        db = get_db()
         docs = db.collection("users").document(user_id).collection("weeklyReports") \
                  .order_by("timestamp", direction=firestore.Query.DESCENDING) \
                  .limit(8) \

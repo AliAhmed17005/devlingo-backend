@@ -1,22 +1,6 @@
-# Python virtual environment
 venv/
-.venv/
-env/
-
-# Environment and sensitive keys
-.env
 serviceAccount.json
-
-# Python caching
+.env
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# Models and data outputs
-models/*.pkl
-data/*.json
-
-# IDE config files
-.vscode/
-.idea/
+token.json
