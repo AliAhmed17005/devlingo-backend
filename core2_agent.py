@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 from firebase_admin import firestore
@@ -150,3 +153,4 @@ def mood_chart(user_id: str):
         return {"entries": list(reversed(entries))}
     except Exception:
         return {"entries": []}
+

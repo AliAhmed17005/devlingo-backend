@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
 from firebase_admin import firestore
