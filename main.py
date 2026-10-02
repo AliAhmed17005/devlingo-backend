@@ -8,10 +8,20 @@ import os, json
 load_dotenv()
 
 creds_json = os.getenv("GOOGLE_CREDS_JSON")
-if creds_json:
-    cred = credentials.Certificate(json.loads(creds_json))
-else:
+if creds_json and creds_json.strip():
+    try:
+        cred_dict = json.loads(creds_json)
+        cred = credentials.Certificate(cred_dict)
+    except Exception as e:
+        print(f"Error loading GOOGLE_CREDS_JSON from env: {e}")
+        if os.path.exists("serviceAccount.json"):
+            cred = credentials.Certificate("serviceAccount.json")
+        else:
+            raise e
+elif os.path.exists("serviceAccount.json"):
     cred = credentials.Certificate("serviceAccount.json")
+else:
+    raise ValueError("Missing Firebase credentials! Please add GOOGLE_CREDS_JSON to Railway Environment Variables.")
 
 firebase_admin.initialize_app(cred)
 db = firestore.client()
@@ -49,3 +59,4 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
