@@ -1,7 +1,7 @@
 import warnings
 warnings.filterwarnings('ignore')
 
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 from pydantic import BaseModel
 from firebase_admin import firestore
 from datetime import datetime, timedelta
