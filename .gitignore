@@ -4,3 +4,4 @@ serviceAccount.json
 __pycache__/
 *.pyc
 token.json
+*.pkl
