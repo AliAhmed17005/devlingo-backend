@@ -1,0 +1,77 @@
+[
+ {
+  "topicId": "T01",
+  "topic": "Variables & Assignment",
+  "order": 1
+ },
+ {
+  "topicId": "T02",
+  "topic": "Data Types & Type Conversion",
+  "order": 2
+ },
+ {
+  "topicId": "T03",
+  "topic": "Strings",
+  "order": 3
+ },
+ {
+  "topicId": "T04",
+  "topic": "Conditionals",
+  "order": 4
+ },
+ {
+  "topicId": "T05",
+  "topic": "Loops",
+  "order": 5
+ },
+ {
+  "topicId": "T06",
+  "topic": "Lists",
+  "order": 6
+ },
+ {
+  "topicId": "T07",
+  "topic": "Tuples & Sets",
+  "order": 7
+ },
+ {
+  "topicId": "T08",
+  "topic": "Dictionaries",
+  "order": 8
+ },
+ {
+  "topicId": "T09",
+  "topic": "Comprehensions",
+  "order": 9
+ },
+ {
+  "topicId": "T10",
+  "topic": "Functions",
+  "order": 10
+ },
+ {
+  "topicId": "T11",
+  "topic": "Modules & Error Handling",
+  "order": 11
+ },
+ {
+  "topicId": "T12",
+  "topic": "Classes & Objects",
+  "order": 12
+ },
+ {
+  "topicId": "T13",
+  "topic": "Inheritance & Polymorphism",
+  "order": 13
+ },
+ {
+  "topicId": "T14",
+  "topic": "Iterators & Generators",
+  "order": 14
+ },
+ {
+  "topicId": "T15",
+  "topic": "Decorators & Context Managers",
+  "order": 15
+ }
+]
