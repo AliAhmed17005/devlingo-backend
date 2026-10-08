@@ -1,12 +1,12 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import os, json, asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
-import os, json
 
 load_dotenv()
 
@@ -40,13 +40,19 @@ app.add_middleware(
 
 from core1_difficulty import router as r1
 from core2_agent      import router as r2
-from core3_reporting  import router as r3
+from core3_reporting  import router as r3, automated_weekly_reports_scheduler
 from core4_scheduling import router as r4
 from core5_codehealth import router as r5
 from core6_matching   import router as r6
 
 for r in [r1, r2, r3, r4, r5, r6]:
     app.include_router(r)
+
+@app.on_event("startup")
+async def startup_event():
+    # Launch automated weekly email reports scheduler in background
+    asyncio.create_task(automated_weekly_reports_scheduler())
+    print("[DevLingo] Automated weekly report background scheduler launched.")
 
 @app.get("/")
 def root():
@@ -62,4 +68,3 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
-

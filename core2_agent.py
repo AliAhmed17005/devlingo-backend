@@ -1,6 +1,3 @@
-import warnings
-warnings.filterwarnings("ignore")
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 from firebase_admin import firestore
@@ -9,10 +6,18 @@ import google.generativeai as genai
 import os
 
 router = APIRouter(prefix="/agent")
-db     = firestore.client()
+db = firestore.client()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-llm = genai.GenerativeModel("gemini-1.5-flash")
+GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+    llm = genai.GenerativeModel("gemini-1.5-flash")
+    GEMINI_AVAILABLE = True
+    print(f"[Core 2] Gemini configured successfully")
+else:
+    GEMINI_AVAILABLE = False
+    print("[Core 2] WARNING: GEMINI_API_KEY not set — chatbot will use fallback")
 
 SENTIMENT_SCORES = {
     "confident":  1.0,
@@ -35,26 +40,58 @@ class ChatRequest(BaseModel):
     level:   str
     score:   int
 
+def _generate_with_gemini(prompt_text: str) -> str:
+    # Try gemini-1.5-flash first, then newer active models if 1.5 is deprecated (404)
+    models_to_try = ["gemini-1.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]
+    last_err = None
+    for model_name in models_to_try:
+        try:
+            m = genai.GenerativeModel(model_name)
+            resp = m.generate_content(prompt_text)
+            if resp and resp.text:
+                return resp.text.strip()
+        except Exception as e:
+            last_err = e
+            err_msg = str(e).lower()
+            if "404" in err_msg or "not found" in err_msg or "no longer available" in err_msg:
+                continue
+            raise e
+    if last_err:
+        raise last_err
+    raise RuntimeError("No response from Gemini models")
+
 @router.post("/classify-state")
 def classify_state(req: StateRequest):
     retry_penalty = min(req.retries * 0.1, 0.4)
     pace_score    = max(0, 1.0 - (req.time_taken / 300))
     recent_text   = " | ".join(req.messages[-3:])
 
-    try:
-        raw = llm.generate_content(
-            f"Classify this student message as ONE word only.\n"
-            f"Options: confident, neutral, frustrated, confused\n"
-            f"Message: {recent_text}\n"
-            f"Reply with one word only:"
-        ).text.strip().lower()
-        raw = raw.replace(".", "").replace(",", "").split()[0]
-        sentiment = raw if raw in SENTIMENT_SCORES else "neutral"
-    except Exception:
-        sentiment = "neutral"
+    if GEMINI_AVAILABLE:
+        try:
+            prompt = (
+                f"Classify this student message as ONE word only.\n"
+                f"Choose from: confident, neutral, frustrated, confused\n"
+                f"Message: {recent_text}\n"
+                f"Reply with one word only, nothing else:"
+            )
+            raw = _generate_with_gemini(prompt).lower()
+            raw = raw.replace(".", "").replace(",", "").replace("!", "").split()[0]
+            sentiment = raw if raw in SENTIMENT_SCORES else "neutral"
+        except Exception as e:
+            print(f"[Core 2] Gemini sentiment error: {e}")
+            sentiment = "neutral"
+    else:
+        words = recent_text.lower()
+        if any(w in words for w in ["dont get","dont understand","confused","lost","stuck","help"]):
+            sentiment = "confused"
+        elif any(w in words for w in ["hate","why","nothing","worst","broken","stupid"]):
+            sentiment = "frustrated"
+        elif any(w in words for w in ["got it","understand","easy","nice","great","perfect"]):
+            sentiment = "confident"
+        else:
+            sentiment = "neutral"
 
     sentiment_score = SENTIMENT_SCORES[sentiment]
-
     confidence = max(0, min(1,
         0.35 * req.recent_accuracy +
         0.30 * sentiment_score     +
@@ -68,23 +105,26 @@ def classify_state(req: StateRequest):
         message = "Let us slow down and try an easier problem."
     elif confidence > 0.72:
         action  = "increase_difficulty"
-        message = "Great work -- ready for a harder challenge!"
+        message = "Great work — ready for a harder challenge!"
     else:
         action  = "maintain"
         message = None
 
-    db.collection("stateLog").add({
-        "userId":     req.user_id,
-        "sentiment":  sentiment,
-        "confidence": confidence,
-        "action":     action,
-        "signals": {
-            "accuracy":      req.recent_accuracy,
-            "pace":          round(pace_score, 2),
-            "retry_penalty": round(retry_penalty, 2)
-        },
-        "timestamp": firestore.SERVER_TIMESTAMP
-    })
+    try:
+        db.collection("stateLog").add({
+            "userId":     req.user_id,
+            "sentiment":  sentiment,
+            "confidence": confidence,
+            "action":     action,
+            "signals": {
+                "accuracy":      req.recent_accuracy,
+                "pace":          round(pace_score, 2),
+                "retry_penalty": round(retry_penalty, 2)
+            },
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+    except Exception as e:
+        print(f"[Core 2] Firestore write error: {e}")
 
     return {
         "sentiment":  sentiment,
@@ -100,31 +140,54 @@ def classify_state(req: StateRequest):
 
 @router.post("/chat")
 def chat(req: ChatRequest):
-    try:
-        reply = llm.generate_content(
-            f"You are Aria, a Python tutor for DevLingo learning platform.\n"
-            f"Student level: {req.level}\n"
-            f"Current topic: {req.topic}\n"
-            f"Last score: {req.score}%\n\n"
-            f"STRICT RULES you must always follow:\n"
-            f"1. NEVER write Python code, syntax, or solutions for the student\n"
-            f"2. NEVER reveal the answer or expected output\n"
-            f"3. NEVER complete the student code even partially\n"
-            f"4. You MAY explain concepts in plain English\n"
-            f"5. You MAY give real-world analogies\n"
-            f"6. You MAY ask guiding questions to help them think\n"
-            f"7. You MAY explain error messages without fixing them\n"
-            f"8. If asked for code say exactly: I cannot write code for you but let me explain the concept so you can figure it out!\n"
-            f"9. Keep response under 80 words\n"
-            f"10. Be warm, encouraging, and Socratic\n\n"
-            f"Student message: {req.message}\n"
-            f"Your response:"
-        ).text.strip()
-        return {"reply": reply}
-    except Exception as e:
-        return {"reply": "I am having a connection issue. Please try again in a moment."}
+    print(f"[Core 2] Chat request — topic:{req.topic} level:{req.level} gemini:{GEMINI_AVAILABLE}")
+
+    if GEMINI_AVAILABLE:
+        try:
+            prompt = f"""You are Aria, a Python tutor for DevLingo learning platform.
+Student level: {req.level}
+Current topic: {req.topic}
+Last score: {req.score}%
+
+STRICT RULES you must always follow without exception:
+1. NEVER write Python code, syntax, or code solutions for the student
+2. NEVER reveal the expected output or the answer
+3. NEVER complete or show the student's code even partially
+4. You MAY explain concepts clearly in plain English
+5. You MAY use real-world analogies to explain ideas
+6. You MAY ask Socratic guiding questions
+7. You MAY explain what an error message means without fixing it
+8. If student asks for code or syntax say exactly:
+   I cannot write code for you, but let me explain the concept so you can figure it out!
+9. Keep your response under 80 words
+10. Be warm, encouraging, and patient
+
+Student message: {req.message}
+
+Your response (remember: NO code, under 80 words):"""
+
+            reply = _generate_with_gemini(prompt)
+            print(f"[Core 2] Gemini responded: {reply[:50]}...")
+            return {"reply": reply, "source": "gemini"}
+
+        except Exception as e:
+            print(f"[Core 2] Gemini chat error: {e}")
+            return {
+                "reply": f"I am having a connection issue right now. "
+                         f"For {req.topic}, try thinking about what the concept "
+                         f"does in real life before writing any code. "
+                         f"What do you think it means?",
+                "source": "fallback",
+                "error": str(e)
+            }
+    else:
+        return {
+            "reply": "Gemini API key is not configured. Please add GEMINI_API_KEY to your .env file.",
+            "source": "no_key"
+        }
 
 @router.get("/log/{user_id}")
+@router.get("/state-log/{user_id}")
 def get_log(user_id: str):
     try:
         logs = db.collection("stateLog")\
@@ -153,4 +216,3 @@ def mood_chart(user_id: str):
         return {"entries": list(reversed(entries))}
     except Exception:
         return {"entries": []}
-
