@@ -24,8 +24,9 @@ def elo_update(skill, difficulty, correct):
 
 def resolve_user_skill(user_data: dict, topic_id: str):
     skill_ratings = user_data.get("skillRatings", {})
-    if topic_id in skill_ratings and skill_ratings[topic_id] is not None:
-        return float(skill_ratings[topic_id])
+    for t in [topic_id, topic_id.upper(), topic_id.lower()]:
+        if t in skill_ratings and skill_ratings[t] is not None:
+            return float(skill_ratings[t])
     
     # If not yet rated for this topic, look at currentLevel set by prior topic score
     user_level = user_data.get("currentLevel", "easy")
@@ -51,11 +52,27 @@ def update_elo(a: Attempt):
     
     # Update skill and currentLevel based on new skill
     updated_level = skill_to_level(new_skill)
+    norm_topic = a.topic_id.upper()
+    lower_topic = a.topic_id.lower()
+    existing_skills = user_data.get("skillRatings", {}) or {}
+    existing_skills[a.topic_id] = new_skill
+    existing_skills[norm_topic] = new_skill
+    existing_skills[lower_topic] = new_skill
+    numeric_vals = [float(v) for v in existing_skills.values() if isinstance(v, (int, float))]
+    overall_elo = round(sum(numeric_vals) / len(numeric_vals)) if numeric_vals else round(new_skill)
+
     user_ref.update({
         f"skillRatings.{a.topic_id}": new_skill,
+        f"skillRatings.{norm_topic}": new_skill,
+        f"skillRatings.{lower_topic}": new_skill,
+        "overallElo": overall_elo,
         "currentLevel": updated_level
     })
-    prob_ref.update({"eloRating": new_diff})
+    try:
+        if prob_data and prob_ref.get().exists:
+            prob_ref.update({"eloRating": new_diff})
+    except Exception:
+        pass
     user_ref.collection("sessions").add({
         "topicId":    a.topic_id,
         "problemId":  a.problem_id,
